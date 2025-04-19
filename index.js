@@ -28,83 +28,53 @@ async function getBalance(asset) {
     const found = balances.find(b => b.asset === asset);
     return found ? parseFloat(found.free) : 0;
   } catch (err) {
+    console.error('⛔ Error al obtener balance:', err.message);
     return 0;
   }
 }
 
-async function placeOrder(params) {
-  const timestamp = Date.now();
-  const fullParams = { ...params, timestamp };
-  const queryString = new URLSearchParams(fullParams).toString();
-  const signature = sign(queryString);
+app.post('/ordenar', async (req, res) => {
+  const { symbol, price } = req.body;
 
-  const signedParams = new URLSearchParams({
-    ...fullParams,
-    signature
+  if (!symbol || !price) {
+    return res.status(400).json({ error: 'Faltan parámetros obligatorios' });
+  }
+
+  const balance = await getBalance('USDT');
+  if (balance <= 0) {
+    return res.status(400).json({ error: 'Saldo USDT insuficiente' });
+  }
+
+  const quantity = (balance / parseFloat(price)).toFixed(6);
+  const timestamp = Date.now();
+
+  const params = new URLSearchParams({
+    symbol,
+    side: 'BUY',
+    type: 'LIMIT',
+    timeInForce: 'GTC',
+    price,
+    quantity,
+    timestamp: timestamp.toString()
   });
 
+  const signature = sign(params.toString());
+  params.append('signature', signature);
+
   try {
-    const res = await axios.post('https://api.mexc.com/api/v3/order', signedParams, {
+    const response = await axios.post('https://api.mexc.com/api/v3/order', params, {
       headers: {
         'X-MEXC-APIKEY': API_KEY,
         'Content-Type': 'application/x-www-form-urlencoded'
       }
     });
-    return res.data;
+
+    res.json({ result: response.data });
   } catch (err) {
-    return { error: err.response?.data || err.message };
-  }
-}
-
-app.post('/ordenar', async (req, res) => {
-  try {
-    const { symbol, price, stop_loss, take_profit } = req.body;
-
-    if (!symbol || !price || !stop_loss || !take_profit) {
-      return res.status(400).json({ error: 'Faltan parámetros' });
-    }
-
-    const usdtBalance = await getBalance('USDT');
-    if (!usdtBalance || usdtBalance < 5) {
-      return res.json({ error: 'Saldo insuficiente en USDT' });
-    }
-
-    const quantity = (usdtBalance / parseFloat(price)).toFixed(6);
-
-    const buyOrder = await placeOrder({
-      symbol,
-      side: 'BUY',
-      type: 'LIMIT',
-      timeInForce: 'GTC',
-      quantity,
-      price
-    });
-
-    const tpOrder = await placeOrder({
-      symbol,
-      side: 'SELL',
-      type: 'LIMIT',
-      timeInForce: 'GTC',
-      quantity,
-      price: take_profit
-    });
-
-    const slOrder = await placeOrder({
-      symbol,
-      side: 'SELL',
-      type: 'STOP_LOSS_LIMIT',
-      timeInForce: 'GTC',
-      quantity,
-      price: stop_loss,
-      stopPrice: stop_loss
-    });
-
-    res.json({ buyOrder, tpOrder, slOrder });
-  } catch (e) {
-    res.status(500).json({ error: 'Fallo interno', detail: e.message });
+    res.json({ error: err.response?.data || err.message });
   }
 });
 
 app.listen(3000, () => {
-  console.log('✅ Servidor MEXC Spot funcionando con Content-Type corregido');
+  console.log('🟢 Bot MEXC: compra con todo el saldo lista en puerto 3000');
 });
