@@ -24,9 +24,9 @@ async function getBalance(asset) {
 
   try {
     const res = await axios.get(url, {
-      headers: { 
-        'X-MEXC-APIKEY': API_KEY,
-        'Content-Type': 'application/json'    // ← obligatorio
+      headers: {
+        'X-MEXC-APIKEY':  API_KEY,
+        'Content-Type':   'application/json'
       }
     });
     const found = res.data.balances.find(b => b.asset === asset);
@@ -64,17 +64,16 @@ app.post('/ordenar', async (req, res) => {
   const signature = sign(params.toString());
   params.append('signature', signature);
 
-  // Construimos la URL con todos los parámetros en la query
   const url = `https://api.mexc.com/api/v3/order?${params.toString()}`;
 
   try {
     const response = await axios.post(
       url,
-      null,  // nada en el body
+      null,
       {
         headers: {
-          'X-MEXC-APIKEY':  API_KEY,
-          'Content-Type':   'application/json'  // ← aquí también
+          'X-MEXC-APIKEY': API_KEY,
+          'Content-Type':  'application/json'    // ← imprescindible aquí
         }
       }
     );
