@@ -28,22 +28,23 @@ async function getBalance(asset) {
     const found = balances.find(b => b.asset === asset);
     return found ? parseFloat(found.free) : 0;
   } catch (err) {
-    console.error('⛔ Error al obtener balance:', err.message);
     return 0;
   }
 }
 
 async function placeOrder(params) {
   const timestamp = Date.now();
-  const query = new URLSearchParams({ ...params, timestamp });
-  const queryString = query.toString();
+  const fullParams = { ...params, timestamp };
+  const queryString = new URLSearchParams(fullParams).toString();
   const signature = sign(queryString);
-  const finalQuery = `${queryString}&signature=${signature}`;
+
+  const signedParams = new URLSearchParams({
+    ...fullParams,
+    signature
+  });
 
   try {
-    const res = await axios({
-      method: 'POST',
-      url: `https://api.mexc.com/api/v3/order?${finalQuery}`,
+    const res = await axios.post('https://api.mexc.com/api/v3/order', signedParams, {
       headers: {
         'X-MEXC-APIKEY': API_KEY,
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -60,10 +61,8 @@ app.post('/ordenar', async (req, res) => {
     const { symbol, price, stop_loss, take_profit } = req.body;
 
     if (!symbol || !price || !stop_loss || !take_profit) {
-      return res.status(400).json({ error: 'Faltan parámetros en el body' });
+      return res.status(400).json({ error: 'Faltan parámetros' });
     }
-
-    console.log('🔄 Recibido:', req.body);
 
     const usdtBalance = await getBalance('USDT');
     if (!usdtBalance || usdtBalance < 5) {
@@ -100,13 +99,12 @@ app.post('/ordenar', async (req, res) => {
       stopPrice: stop_loss
     });
 
-    return res.json({ buyOrder, tpOrder, slOrder });
+    res.json({ buyOrder, tpOrder, slOrder });
   } catch (e) {
-    console.error('⛔ Error inesperado:', e.message);
-    return res.status(500).json({ error: 'Fallo interno del servidor' });
+    res.status(500).json({ error: 'Fallo interno', detail: e.message });
   }
 });
 
 app.listen(3000, () => {
-  console.log('✅ Servidor MEXC Spot funcionando en el puerto 3000');
+  console.log('✅ Servidor MEXC Spot funcionando con Content-Type corregido');
 });
