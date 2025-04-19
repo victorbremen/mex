@@ -1,3 +1,4 @@
+// index.js
 const express = require('express');
 const crypto = require('crypto');
 const axios = require('axios');
@@ -20,12 +21,9 @@ async function getBalance(asset) {
 
   try {
     const res = await axios.get(url, {
-      headers: {
-        'X-MEXC-APIKEY': API_KEY
-      }
+      headers: { 'X-MEXC-APIKEY': API_KEY }
     });
-    const balances = res.data.balances;
-    const found = balances.find(b => b.asset === asset);
+    const found = res.data.balances.find(b => b.asset === asset);
     return found ? parseFloat(found.free) : 0;
   } catch (err) {
     console.error('⛔ Error al obtener balance:', err.message);
@@ -35,7 +33,6 @@ async function getBalance(asset) {
 
 app.post('/ordenar', async (req, res) => {
   const { symbol, price } = req.body;
-
   if (!symbol || !price) {
     return res.status(400).json({ error: 'Faltan parámetros obligatorios' });
   }
@@ -57,18 +54,15 @@ app.post('/ordenar', async (req, res) => {
     quantity,
     timestamp: timestamp.toString()
   });
-
   const signature = sign(params.toString());
   params.append('signature', signature);
 
-  try {
-    const response = await axios.post('https://api.mexc.com/api/v3/order', params, {
-      headers: {
-        'X-MEXC-APIKEY': API_KEY,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    });
+  const url = `https://api.mexc.com/api/v3/order?${params.toString()}`;
 
+  try {
+    const response = await axios.post(url, null, {
+      headers: { 'X-MEXC-APIKEY': API_KEY }
+    });
     res.json({ result: response.data });
   } catch (err) {
     res.json({ error: err.response?.data || err.message });
@@ -76,5 +70,5 @@ app.post('/ordenar', async (req, res) => {
 });
 
 app.listen(3000, () => {
-  console.log('🟢 Bot MEXC: compra con todo el saldo lista en puerto 3000');
+  console.log('🟢 Bot MEXC funcionando en puerto 3000');
 });
