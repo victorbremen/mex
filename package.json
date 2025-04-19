@@ -1,13 +1,14 @@
 {
-  "name": "nodejs",
+  "name": "binance-trading-bot",
   "version": "1.0.0",
-  "description": "",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "axios": "^1.6.7"
+    "axios": "^1.6.7",
+    "crypto": "^1.0.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
   }
 }
