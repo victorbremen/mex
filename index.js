@@ -5,29 +5,34 @@ const axios = require('axios');
 const app = express();
 app.use(express.json());
 
-// 🔑 Claves de tu cuenta
 const API_KEY = process.env.API_KEY;
 const API_SECRET = process.env.API_SECRET;
 
-// 🧠 Firma HMAC SHA256
+// Firma HMAC SHA256 para MEXC
 function sign(queryString) {
   return crypto.createHmac('sha256', API_SECRET).update(queryString).digest('hex');
 }
 
-// 🔁 Ejecutar orden en Spot
+// Enviar orden Spot (CORREGIDO)
 async function placeOrder(params) {
   const timestamp = Date.now();
   const query = new URLSearchParams({
     ...params,
     timestamp
-  }).toString();
+  });
 
-  const signature = sign(query);
-  const finalQuery = `${query}&signature=${signature}`;
+  const queryString = query.toString();
+  const signature = sign(queryString);
+  const finalQuery = `${queryString}&signature=${signature}`;
 
   try {
-    const res = await axios.post(`https://api.mexc.com/api/v3/order?${finalQuery}`, null, {
-      headers: { 'X-MEXC-APIKEY': API_KEY }
+    const res = await axios({
+      method: 'POST',
+      url: `https://api.mexc.com/api/v3/order?${finalQuery}`,
+      headers: {
+        'X-MEXC-APIKEY': API_KEY,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
     });
     return res.data;
   } catch (err) {
@@ -35,7 +40,7 @@ async function placeOrder(params) {
   }
 }
 
-// 🔎 Consulta una orden por ID
+// Consultar estado de la orden
 async function getOrderStatus(symbol, orderId) {
   const timestamp = Date.now();
   const query = `symbol=${symbol}&orderId=${orderId}&timestamp=${timestamp}`;
@@ -52,10 +57,11 @@ async function getOrderStatus(symbol, orderId) {
   }
 }
 
+// Ruta principal
 app.post('/ordenar', async (req, res) => {
   const { symbol, price, quantity, stop_loss, take_profit } = req.body;
 
-  // Paso 1: orden BUY LIMIT
+  // Orden de compra LIMIT
   const buyParams = {
     symbol,
     side: 'BUY',
@@ -68,7 +74,7 @@ app.post('/ordenar', async (req, res) => {
   const buyOrder = await placeOrder(buyParams);
   if (buyOrder.error) return res.json({ buyOrder });
 
-  // Paso 2: esperar que se ejecute
+  // Esperar ejecución
   let status = '';
   for (let i = 0; i < 10; i++) {
     const result = await getOrderStatus(symbol, buyOrder.orderId);
@@ -76,12 +82,14 @@ app.post('/ordenar', async (req, res) => {
       status = 'FILLED';
       break;
     }
-    await new Promise(r => setTimeout(r, 3000)); // espera 3 segundos
+    await new Promise(r => setTimeout(r, 3000));
   }
 
-  if (status !== 'FILLED') return res.json({ error: 'La orden de compra no se ejecutó a tiempo' });
+  if (status !== 'FILLED') {
+    return res.json({ error: 'La orden de compra no se ejecutó a tiempo' });
+  }
 
-  // Paso 3: colocar TP y SL (como órdenes independientes)
+  // Take Profit
   const sellTP = await placeOrder({
     symbol,
     side: 'SELL',
@@ -91,6 +99,7 @@ app.post('/ordenar', async (req, res) => {
     price: take_profit
   });
 
+  // Stop Loss
   const sellSL = await placeOrder({
     symbol,
     side: 'SELL',
@@ -104,4 +113,5 @@ app.post('/ordenar', async (req, res) => {
   res.json({ buyOrder, sellTP, sellSL });
 });
 
+// Iniciar servidor
 app.listen(3000, () => console.log('🟢 Servidor Spot listo en puerto 3000'));
