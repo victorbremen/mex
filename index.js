@@ -8,12 +8,12 @@ app.use(express.json());
 const API_KEY = process.env.API_KEY;
 const API_SECRET = process.env.API_SECRET;
 
-// Firma HMAC SHA256 para MEXC
+// 👉 Firmar parámetros
 function sign(queryString) {
   return crypto.createHmac('sha256', API_SECRET).update(queryString).digest('hex');
 }
 
-// Enviar orden Spot (CORREGIDO)
+// 👉 Ejecutar orden spot
 async function placeOrder(params) {
   const timestamp = Date.now();
   const query = new URLSearchParams({
@@ -40,57 +40,21 @@ async function placeOrder(params) {
   }
 }
 
-// Consultar estado de la orden
-async function getOrderStatus(symbol, orderId) {
-  const timestamp = Date.now();
-  const query = `symbol=${symbol}&orderId=${orderId}&timestamp=${timestamp}`;
-  const signature = sign(query);
-  const url = `https://api.mexc.com/api/v3/order?${query}&signature=${signature}`;
-
-  try {
-    const res = await axios.get(url, {
-      headers: { 'X-MEXC-APIKEY': API_KEY }
-    });
-    return res.data;
-  } catch (err) {
-    return { error: err.response?.data || err.message };
-  }
-}
-
-// Ruta principal
 app.post('/ordenar', async (req, res) => {
   const { symbol, price, quantity, stop_loss, take_profit } = req.body;
 
-  // Orden de compra LIMIT
-  const buyParams = {
+  // 👉 Orden de compra LIMIT inmediata
+  const buyOrder = await placeOrder({
     symbol,
     side: 'BUY',
     type: 'LIMIT',
     timeInForce: 'GTC',
     quantity,
     price
-  };
+  });
 
-  const buyOrder = await placeOrder(buyParams);
-  if (buyOrder.error) return res.json({ buyOrder });
-
-  // Esperar ejecución
-  let status = '';
-  for (let i = 0; i < 10; i++) {
-    const result = await getOrderStatus(symbol, buyOrder.orderId);
-    if (result.status === 'FILLED') {
-      status = 'FILLED';
-      break;
-    }
-    await new Promise(r => setTimeout(r, 3000));
-  }
-
-  if (status !== 'FILLED') {
-    return res.json({ error: 'La orden de compra no se ejecutó a tiempo' });
-  }
-
-  // Take Profit
-  const sellTP = await placeOrder({
+  // 👉 TP directo
+  const tpOrder = await placeOrder({
     symbol,
     side: 'SELL',
     type: 'LIMIT',
@@ -99,8 +63,8 @@ app.post('/ordenar', async (req, res) => {
     price: take_profit
   });
 
-  // Stop Loss
-  const sellSL = await placeOrder({
+  // 👉 SL directo
+  const slOrder = await placeOrder({
     symbol,
     side: 'SELL',
     type: 'STOP_LOSS_LIMIT',
@@ -110,8 +74,9 @@ app.post('/ordenar', async (req, res) => {
     stopPrice: stop_loss
   });
 
-  res.json({ buyOrder, sellTP, sellSL });
+  res.json({ buyOrder, tpOrder, slOrder });
 });
 
-// Iniciar servidor
-app.listen(3000, () => console.log('🟢 Servidor Spot listo en puerto 3000'));
+app.listen(3000, () => {
+  console.log('🟢 Servidor Spot MEXC listo en puerto 3000');
+});
