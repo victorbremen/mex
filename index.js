@@ -5,62 +5,58 @@ const axios = require('axios');
 const app = express();
 app.use(express.json());
 
-// 👉 TUS CLAVES
-const API_KEY = 'bNupFgyDRmoCr1vrFGI75mpldGp1nICYKPUO68aLiS1WBRdhK3AG88YFcthiMPIA';
-const API_SECRET = '8ZdMgbFEUQ85t7RhFKedRqrPhVhFG75x1CkfyEoUbdi6sh0UCBre2FmLhbMmCuOd';
+const API_KEY = process.env.API_KEY;
+const API_SECRET = process.env.API_SECRET;
 
-const BINANCE_URL = 'https://fapi.binance.com/fapi/v1/order';
+const MEXC_BASE_URL = 'https://contract.mexc.com';
+const MEXC_ORDER_ENDPOINT = '/api/v1/private/order/submit';
 
-function signQuery(params) {
-  const queryString = new URLSearchParams(params).toString();
-  const signature = crypto
-    .createHmac('sha256', API_SECRET)
-    .update(queryString)
-    .digest('hex');
-  return `${queryString}&signature=${signature}`;
+function sign(params) {
+  const sorted = Object.entries(params)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
+  const signature = crypto.createHmac('sha256', API_SECRET).update(sorted).digest('hex');
+  return { signature };
 }
 
 async function sendOrder(order) {
   const timestamp = Date.now();
-  const baseParams = {
+  const params = {
+    api_key: API_KEY,
+    req_time: timestamp,
     symbol: order.symbol,
+    price: order.price,
+    vol: order.quantity,
     side: order.side,
     type: order.type,
-    quantity: order.quantity,
-    timeInForce: order.timeInForce,
-    price: order.price,
-    stopPrice: order.stopPrice,
-    closePosition: order.closePosition,
-    timestamp,
-    recvWindow: 5000
+    open_type: 'ISOLATED',
+    leverage: 20,
+    external_oid: `bot-${timestamp}`,
+    stop_loss_price: order.stop_loss_price,
+    take_profit_price: order.take_profit_price
   };
 
-  const filteredParams = Object.fromEntries(
-    Object.entries(baseParams).filter(([_, v]) => v !== undefined)
-  );
-
-  const signedQuery = signQuery(filteredParams);
+  const filtered = Object.fromEntries(Object.entries(params).filter(([_, v]) => v !== undefined && v !== ''));
+  const { signature } = sign(filtered);
+  filtered.sign = signature;
 
   try {
-    const response = await axios.post(`${BINANCE_URL}?${signedQuery}`, null, {
-      headers: { 'X-MBX-APIKEY': API_KEY }
+    const res = await axios.post(`${MEXC_BASE_URL}${MEXC_ORDER_ENDPOINT}`, filtered, {
+      headers: { 'Content-Type': 'application/json' }
     });
-    return response.data;
-  } catch (error) {
-    return { error: error.response?.data || error.message };
+    return res.data;
+  } catch (err) {
+    return { error: err.response?.data || err.message };
   }
 }
 
 app.post('/ordenar', async (req, res) => {
   const { entryOrder, stopLossOrder, takeProfitOrder } = req.body;
-
-  const results = {
-    entry: await sendOrder(entryOrder),
-    stopLoss: await sendOrder(stopLossOrder),
-    takeProfit: await sendOrder(takeProfitOrder)
-  };
-
-  res.json(results);
+  const entry = await sendOrder(entryOrder);
+  const sl = await sendOrder(stopLossOrder);
+  const tp = await sendOrder(takeProfitOrder);
+  res.json({ entry, stopLoss: sl, takeProfit: tp });
 });
 
-app.listen(3000, () => console.log('🟢 Servidor listo en http://localhost:3000'));
+app.listen(3000, () => console.log('🟢 Servidor MEXC listo en puerto 3000'));
