@@ -1,4 +1,3 @@
-// index.js (GitHub - Backend Proxy para Binance Spot Trading con balance total)
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -15,7 +14,7 @@ function sign(queryString) {
   return crypto.createHmac('sha256', API_SECRET).update(queryString).digest('hex');
 }
 
-async function getUSDTBalance() {
+async function getUSDCBalance() {
   const timestamp = Date.now();
   const query = `timestamp=${timestamp}`;
   const signature = sign(query);
@@ -24,16 +23,18 @@ async function getUSDTBalance() {
     headers: { 'X-MBX-APIKEY': API_KEY },
   });
 
-  const usdt = response.data.balances.find(b => b.asset === 'USDT');
-  return parseFloat(usdt.free);
+  const usdc = response.data.balances.find(b => b.asset === 'USDC');
+  return parseFloat(usdc?.free || 0);
 }
 
 app.post('/orden', async (req, res) => {
   try {
     const { symbol, price, take_profit, stop_loss } = req.body;
 
-    const balanceUSDT = await getUSDTBalance();
-    const quantity = (balanceUSDT / parseFloat(price)).toFixed(6); // ajusta precisión si es necesario
+    const balanceUSDC = await getUSDCBalance();
+    const stepSize = 0.000001; // ajusta si usas otro par como ETHUSDC
+    const rawQty = balanceUSDC / parseFloat(price);
+    const quantity = (Math.floor(rawQty / stepSize) * stepSize).toFixed(6);
 
     const timestamp = Date.now();
     const baseParams = `symbol=${symbol}&side=BUY&type=LIMIT&timeInForce=GTC&quantity=${quantity}&price=${price}&recvWindow=60000&timestamp=${timestamp}`;
@@ -57,7 +58,7 @@ app.post('/orden', async (req, res) => {
       headers: { 'X-MBX-APIKEY': API_KEY },
     });
 
-    res.json({ success: true, message: 'Orden creada con TP y SL usando saldo total' });
+    res.json({ success: true, message: 'Orden creada con TP y SL usando saldo total USDC' });
   } catch (err) {
     console.error(err.response?.data || err.message);
     res.status(500).json({ success: false, error: err.response?.data || err.message });
