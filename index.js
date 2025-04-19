@@ -32,33 +32,39 @@ app.post('/orden', async (req, res) => {
     const { symbol, price, take_profit, stop_loss } = req.body;
 
     const balanceUSDC = await getUSDCBalance();
-    const stepSize = 0.000001; // ajusta si usas otro par como ETHUSDC
-    const rawQty = balanceUSDC / parseFloat(price);
-    const quantity = (Math.floor(rawQty / stepSize) * stepSize).toFixed(6);
+
+    const qtyRaw = balanceUSDC / parseFloat(price);
+    const stepSize = 0.000001;
+    const quantity = (Math.floor(qtyRaw / stepSize) * stepSize).toFixed(6);
+
+    if (parseFloat(quantity) <= 0) {
+      return res.status(400).json({ success: false, error: 'Cantidad calculada inválida' });
+    }
 
     const timestamp = Date.now();
-    const baseParams = `symbol=${symbol}&side=BUY&type=LIMIT&timeInForce=GTC&quantity=${quantity}&price=${price}&recvWindow=60000&timestamp=${timestamp}`;
-    const signature = sign(baseParams);
 
-    await axios.post(`${BASE_URL}/api/v3/order?${baseParams}&signature=${signature}`, null, {
+    // Orden principal BUY
+    const buyParams = `symbol=${symbol}&side=BUY&type=LIMIT&timeInForce=GTC&quantity=${quantity}&price=${price}&recvWindow=60000&timestamp=${timestamp}`;
+    const buySignature = sign(buyParams);
+    await axios.post(`${BASE_URL}/api/v3/order?${buyParams}&signature=${buySignature}`, null, {
       headers: { 'X-MBX-APIKEY': API_KEY },
     });
 
+    // Take Profit SELL
     const tpParams = `symbol=${symbol}&side=SELL&type=LIMIT&timeInForce=GTC&quantity=${quantity}&price=${take_profit}&recvWindow=60000&timestamp=${Date.now()}`;
     const tpSignature = sign(tpParams);
-
     await axios.post(`${BASE_URL}/api/v3/order?${tpParams}&signature=${tpSignature}`, null, {
       headers: { 'X-MBX-APIKEY': API_KEY },
     });
 
+    // Stop Loss SELL
     const slParams = `symbol=${symbol}&side=SELL&type=STOP_LOSS_LIMIT&quantity=${quantity}&price=${stop_loss}&stopPrice=${stop_loss}&timeInForce=GTC&recvWindow=60000&timestamp=${Date.now()}`;
     const slSignature = sign(slParams);
-
     await axios.post(`${BASE_URL}/api/v3/order?${slParams}&signature=${slSignature}`, null, {
       headers: { 'X-MBX-APIKEY': API_KEY },
     });
 
-    res.json({ success: true, message: 'Orden creada con TP y SL usando saldo total USDC' });
+    res.json({ success: true, message: 'Orden BUY con TP y SL enviada correctamente usando USDC total' });
   } catch (err) {
     console.error(err.response?.data || err.message);
     res.status(500).json({ success: false, error: err.response?.data || err.message });
