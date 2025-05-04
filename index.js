@@ -1,3 +1,4 @@
+// index.js - Binance Spot Trading Bot usando USDC y LOT_SIZE ajustado
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -31,19 +32,18 @@ app.post('/orden', async (req, res) => {
   try {
     const { symbol, price, take_profit, stop_loss } = req.body;
 
-    // Obtener filtros del símbolo
+    // Obtener info del símbolo para el filtro LOT_SIZE
     const exchangeInfo = await axios.get(`${BASE_URL}/api/v3/exchangeInfo?symbol=${symbol}`);
     const filters = exchangeInfo.data.symbols[0].filters;
     const lotSizeFilter = filters.find(f => f.filterType === 'LOT_SIZE');
     const stepSize = parseFloat(lotSizeFilter.stepSize);
     const minQty = parseFloat(lotSizeFilter.minQty);
 
-    // Calcular cantidad ajustada con el 99% del balance de USDC
+    // Calcular la cantidad basada en el 99% del balance USDC
     const balanceUSDC = await getUSDCBalance();
-    const qtyRaw = (balanceUSDC * 0.99) / parseFloat(price);
-
-    const stepSizeDecimals = (stepSize.toString().split('.')[1] || '').length;
-    const quantity = (Math.floor(qtyRaw / stepSize) * stepSize).toFixed(stepSizeDecimals);
+    const usableUSDC = balanceUSDC * 0.99;
+    const qtyRaw = usableUSDC / parseFloat(price);
+    const quantity = (Math.floor(qtyRaw / stepSize) * stepSize).toFixed(8);
 
     if (parseFloat(quantity) < minQty) {
       return res.status(400).json({ success: false, error: 'Cantidad insuficiente para operar según LOT_SIZE' });
@@ -57,7 +57,6 @@ app.post('/orden', async (req, res) => {
       headers: { 'X-MBX-APIKEY': API_KEY },
     });
 
-    // Crear orden de Take Profit (LIMIT SELL)
     const tpParams = `symbol=${symbol}&side=SELL&type=LIMIT&timeInForce=GTC&quantity=${quantity}&price=${take_profit}&recvWindow=60000&timestamp=${Date.now()}`;
     const tpSignature = sign(tpParams);
 
@@ -65,7 +64,6 @@ app.post('/orden', async (req, res) => {
       headers: { 'X-MBX-APIKEY': API_KEY },
     });
 
-    // Crear orden de Stop Loss (STOP_LOSS_LIMIT)
     const slParams = `symbol=${symbol}&side=SELL&type=STOP_LOSS_LIMIT&quantity=${quantity}&price=${stop_loss}&stopPrice=${stop_loss}&timeInForce=GTC&recvWindow=60000&timestamp=${Date.now()}`;
     const slSignature = sign(slParams);
 
@@ -73,7 +71,7 @@ app.post('/orden', async (req, res) => {
       headers: { 'X-MBX-APIKEY': API_KEY },
     });
 
-    res.json({ success: true, message: 'Orden BUY con TP y SL creada con USDC (99%)' });
+    res.json({ success: true, message: 'Orden BUY con TP y SL creada con 99% de USDC disponible' });
 
   } catch (err) {
     console.error(err.response?.data || err.message);
